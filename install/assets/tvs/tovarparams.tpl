@@ -1,13 +1,13 @@
 ﻿/**
  * tovarparams
  *
- * Мета тайтл
+ * 
  *
  * @category        tv
  * @name            tovarparams
  * @internal        @caption Параметры товара
- * @internal        @input_type text
- * @internal        @input_options @INCLUDE assets/tvs/multitv/multitv.customtv.php
+ * @internal        @input_type multitv
+ * @internal        @input_options 
  * @internal        @input_default
  * @internal        @output_widget 
  * @internal        @output_widget_params 
