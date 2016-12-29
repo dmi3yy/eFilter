@@ -6,8 +6,8 @@
  * @category        tv
  * @name            tovarparams
  * @internal        @caption Параметры товара
- * @internal        @input_type custominput
- * @internal        @input_options @@INCLUDE assets/tvs/multitv/multitv.customtv.php
+ * @internal        @input_type custom_tv:multitv
+ * @internal        @input_options
  * @internal        @input_default
  * @internal        @output_widget 
  * @internal        @output_widget_params 
