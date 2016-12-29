@@ -78,7 +78,10 @@ public function __construct($modx, $params)
     $this->docid = isset($this->params['docid']) ? $this->params['docid'] : $this->modx->documentIdentifier;
     $this->cfg = (isset($this->params['cfg']) && $this->params['cfg'] != '') ? $this->params['cfg'] : 'default';
     $this->params['remove_disabled'] = isset($this->params['remove_disabled']) && $this->params['remove_disabled'] != '0' ? '1' : '0';
+    
     $this->fp = isset($_GET) ? $_GET : array();
+    $this->fp = (isset($this->params['sp']) &&  $this->params['sp'] != '') ? $this->params['sp'] : $this->fp;
+
     $this->zero = isset($this->params['hide_zero']) ? '' : '0';
     $this->pattern_folder = (isset($this->params['pattern_folder']) && $this->params['pattern_folder'] != '') ? $this->params['pattern_folder'] : 'assets/images/pattern/';
     $this->nosort_tv_id = isset($this->params['nosort_tv_id']) ? explode(',', $this->params['nosort_tv_id']) : array();
@@ -787,6 +790,11 @@ public function prepareGetParams ($fp)
     if (isset($fp['f']) && is_array($fp['f'])) {
         $tmp = $fp['f'];
     } else {
+        $separator = ',';
+        if(!is_array($fp)) {
+            $fp = json_decode($fp, true);
+             $separator = '-';
+        }
         //расшифровываем GET-строку формата f16=значение1,значение2&f17=значение3,значение4&f18=minmax~100,300 и преобразуем ее в обычный стандартный массив для обработки eFilter, 
         // array(
         //    "16" => array("значение1", "значение2"),
@@ -802,7 +810,7 @@ public function prepareGetParams ($fp)
                     if ($minmax !== false) {
                         $v = str_replace('minmax~', '', $v);
                     }
-                    $tmp2 = explode(',', $v);
+                    $tmp2 = explode($separator, $v);
                     foreach ($tmp2 as $k2 => $v2) {
                         $tmp2[$k2] = urldecode($v2);
                     }
