@@ -8,8 +8,12 @@ $eFltr = new eFilter($modx, $params);
 $eFltr->modx->regClientCSS('assets/snippets/eFilter/html/css/eFilter.css');
 $eFltr->modx->regClientCSS('assets/snippets/eFilter/html/css/slider.css');
 $eFltr->modx->regClientStartupScript('assets/snippets/eFilter/html/js/jquery-ui.min.js');
+$eFltr->modx->regClientStartupScript('assets/snippets/eFilter/html/js/jquery.ui.touch-punch.min.js');
 if (isset($params['ajax']) && $params['ajax'] == '1') {
     $eFltr->modx->regClientStartupScript('<script>var eFiltrAjax = "1";</script>', array('plaintext' => true));
+}
+if (!isset($params['autoSubmit']) || $params['autoSubmit'] == '1') {
+    $eFltr->modx->regClientStartupScript('<script>var eFiltrAutoSubmit = "1";</script>', array('plaintext' => true));
 }
 $eFltr->modx->regClientStartupScript('assets/snippets/eFilter/html/js/eFilter.js');
 
@@ -55,8 +59,8 @@ if (!empty($eFltr->list_tv_ids)) {
 //он используется для поиска подходящих id ресурсов как без фильтров (категория, вложенность, опубликованность, удаленность и т.п.)
 //так и с использованием фильтра
 //на выходе получаем список id подходящих ресурсов через запятую
-$DLparams = array('parents' => $eFltr->docid, /*'tpl' => '@CODE [+id+],', */'depth' => '3', 'addWhereList' => 'c.template IN(' . $eFltr->params['product_templates_id'].')', 'makeUrl' => '0');
-$DLparamsAPI = array('JSONformat' => 'new', 'api' => '1', 'selectFields' => 'c.id');
+$DLparams = array('parents' => $eFltr->docid, /*'tpl' => '@CODE [+id+],', */'depth' => '3', 'addWhereList' => ((isset($eFltr->params['addWhereList']) && !empty($eFltr->params['addWhereList'])) ? $eFltr->params['addWhereList'] . ' AND ' : '') . 'c.template IN(' . $eFltr->params['product_templates_id'] . ')', 'makeUrl' => '0');
+$DLparamsAPI = array('JSONformat' => 'new', 'api' => 'id', 'selectFields' => 'c.id');
 $DLparamsAll = array_merge($DLparams, $DLparamsAPI);
 //это список всех id товаров данной категории, дальше будем вычленять ненужные :)
 $_ = $eFltr->modx->runSnippet("DocLister", $DLparamsAll);

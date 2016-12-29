@@ -59,11 +59,20 @@ public $fp = array();
 //показывать 0 или ничего не показывать
 public $zero = '';
 
-public function __construct($modx, $params){
+//список id, значения которых не нужно сортировать
+public $nosort_tv_id = array();
+
+//тип фильтра для DocLister. По умолчанию - tvd
+public $dl_filter_type;
+
+public function __construct($modx, $params)
+{
     $this->modx = $modx;
     $this->params = $params;
     $this->param_tv_id = $this->params['param_tv_id'];
+    $this->param_tv_id_simple = $this->params['param_tv_id_simple'];
     $this->param_tv_name = $this->getParamTvName();
+    $this->param_tv_name_simple = $this->getParamTvName($this->param_tv_id_simple);
     $this->product_templates_id = $this->params['product_templates_id'];
     $this->product_templates_array = explode(',', $this->product_templates_id);
     $this->docid = isset($this->params['docid']) ? $this->params['docid'] : $this->modx->documentIdentifier;
@@ -71,15 +80,20 @@ public function __construct($modx, $params){
     $this->params['remove_disabled'] = isset($this->params['remove_disabled']) && $this->params['remove_disabled'] != '0' ? '1' : '0';
     $this->fp = isset($_GET) ? $_GET : array();
     $this->zero = isset($this->params['hide_zero']) ? '' : '0';
-	$this->pattern_folder = (isset($this->params['pattern_folder']) && $this->params['pattern_folder'] != '') ? $this->params['pattern_folder'] : 'assets/images/pattern/';
+    $this->pattern_folder = (isset($this->params['pattern_folder']) && $this->params['pattern_folder'] != '') ? $this->params['pattern_folder'] : 'assets/images/pattern/';
+    $this->nosort_tv_id = isset($this->params['nosort_tv_id']) ? explode(',', $this->params['nosort_tv_id']) : array();
+    $this->dl_filter_type = isset($this->params['dl_filter_type']) ? $this->params['dl_filter_type'] : 'tvd';
     $this->prepareGetParams($this->fp);
 }
 
-public function getParamTvName() {
-    return $this->modx->db->getValue("SELECT `name` FROM " . $this->modx->getFullTableName('site_tmplvars') . " WHERE id = {$this->param_tv_id} LIMIT 0,1");
+public function getParamTvName($tv_id = '')
+{
+    $tv_id = !empty($tv_id) ? $tv_id : $this->param_tv_id;
+    return $this->modx->db->getValue("SELECT `name` FROM " . $this->modx->getFullTableName('site_tmplvars') . " WHERE id = {$tv_id} LIMIT 0,1");
 }
 
-public function getFilterParam ($param_tv_name) {
+public function getFilterParam ($param_tv_name)
+{
     $filter_param = array();
     $tv_config = isset ($this->params['tv_config']) ? $this->params['tv_config'] : '';
     if ($tv_config != '') {
@@ -89,7 +103,8 @@ public function getFilterParam ($param_tv_name) {
         if ($param_tv_val != '' && $param_tv_val != '{"fieldValue":[{"param_id":""}],"fieldSettings":{"autoincrement":1}}') {//если задано для категории, ее и берем
             $filter_param = json_decode($param_tv_val, true);
         } else {//если не задано, идем к родителю
-            $parent = $this->modx->db->getValue("SELECT parent FROM " . $this->modx->getFullTableName('site_content') . " WHERE id = {$this->docid} AND parent != 0 LIMIT 0,1");
+            $filter_param = $this->_getParentParam ($this->docid, $param_tv_name);
+            /*$parent = $this->modx->db->getValue("SELECT parent FROM " . $this->modx->getFullTableName('site_content') . " WHERE id = {$this->docid} AND parent != 0 LIMIT 0,1");
             if ($parent) {
                 $param_tv_val = $this->modx->runSnippet("DocInfo", array('docid'=>$parent, 'tv'=>'1', 'field'=>$param_tv_name));
                 if ($param_tv_val != '' && $param_tv_val != '{"fieldValue":[{"param_id":""}],"fieldSettings":{"autoincrement":1}}') {
@@ -100,16 +115,47 @@ public function getFilterParam ($param_tv_name) {
                         $param_tv_val = $this->modx->runSnippet("DocInfo", array('docid'=>$parent2, 'tv'=>'1', 'field'=>$param_tv_name));
                         if ($param_tv_val != '' && $param_tv_val != '{"fieldValue":[{"param_id":""}],"fieldSettings":{"autoincrement":1}}') {
                             $filter_param = json_decode($param_tv_val, true);
+                        }  else {//если и у дедушки нет, идет к прадедушке
+                            $parent3 = $this->modx->db->getValue("SELECT parent FROM " . $this->modx->getFullTableName('site_content') . " WHERE id = {$parent2} AND parent != 0 LIMIT 0,1");
+                            if ($parent3) {
+                                $param_tv_val = $this->modx->runSnippet("DocInfo", array('docid'=>$parent3, 'tv'=>'1', 'field'=>$param_tv_name));
+                                if ($param_tv_val != '' && $param_tv_val != '{"fieldValue":[{"param_id":""}],"fieldSettings":{"autoincrement":1}}') {
+                                    $filter_param = json_decode($param_tv_val, true);
+                                } else {//если и у прадедушки нет, идет к прапрадедушке
+                                    $parent4 = $this->modx->db->getValue("SELECT parent FROM " . $this->modx->getFullTableName('site_content') . " WHERE id = {$parent3} AND parent != 0 LIMIT 0,1");
+                                    if ($parent4) {
+                                        $param_tv_val = $this->modx->runSnippet("DocInfo", array('docid'=>$parent4, 'tv'=>'1', 'field'=>$param_tv_name));
+                                        if ($param_tv_val != '' && $param_tv_val != '{"fieldValue":[{"param_id":""}],"fieldSettings":{"autoincrement":1}}') {
+                                            $filter_param = json_decode($param_tv_val, true);
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
-            }
+            }*/
         }
     }
     return $filter_param;
 }
 
-public function makeFilterArrays() {
+public function _getParentParam ($docid, $param_tv_name) {
+    $filter_param = array();
+    $parent = $this->modx->db->getValue("SELECT parent FROM " . $this->modx->getFullTableName('site_content') . " WHERE id = {$docid} AND parent != 0 LIMIT 0,1");
+    if ($parent) {
+        $param_tv_val = $this->modx->runSnippet("DocInfo", array('docid' => $parent, 'tv' => '1', 'field' => $param_tv_name));
+        if ($param_tv_val != '' && $param_tv_val != '{"fieldValue":[{"param_id":""}],"fieldSettings":{"autoincrement":1}}' && $param_tv_val != '[]') {
+            $filter_param = json_decode($param_tv_val, true);
+        }  else {
+            $filter_param = $this->_getParentParam ($parent, $param_tv_name);
+        }
+    }
+    return $filter_param;
+}
+
+public function makeFilterArrays()
+{
     foreach ($this->filter_param['fieldValue'] as $k => $v) {
         if ($v['fltr_yes'] == '1'){
             $this->filter_tvs[] = $v['param_id'];
@@ -125,10 +171,11 @@ public function makeFilterArrays() {
     }
 }
 
-public function getTVNames ($tv_ids = '', $field = 'name') {
+public function getTVNames ($tv_ids = '', $field = 'name')
+{
     $tv_names = array();
     if ($tv_ids != '') {
-        $q = $this->modx->db->query("SELECT `a`.`id`, `a`.`".$field."` FROM " . $this->modx->getFullTableName('site_tmplvars') . " as `a`, " . $this->modx->getFullTableName('site_tmplvar_templates') . " as `b` WHERE `a`.`id` IN (". $tv_ids.") AND `a`.`id` = `b`.`tmplvarid` AND `b`.`templateid` IN(" . $this->product_templates_id . ") ORDER BY `b`.`rank` ASC, `a`.`$field` ASC");
+        $q = $this->modx->db->query("SELECT `a`.`id`, `a`.`".$field."` FROM " . $this->modx->getFullTableName('site_tmplvars') . " as `a`, " . $this->modx->getFullTableName('site_tmplvar_templates') . " as `b` WHERE `a`.`id` IN (" . $tv_ids . ") AND `a`.`id` = `b`.`tmplvarid` AND `b`.`templateid` IN(" . $this->product_templates_id . ") ORDER BY `b`.`rank` ASC, `a`.`$field` ASC");
         while ($row = $this->modx->db->getRow($q)){
             if (!isset($tv_names[$row['id']])) {
                 $tv_names[$row['id']] = $row[$field];
@@ -138,11 +185,13 @@ public function getTVNames ($tv_ids = '', $field = 'name') {
     return $tv_names;
 }
 
-public function parseTpl ($array1, $array2, $tpl) {
+public function parseTpl ($array1, $array2, $tpl)
+{
     return str_replace($array1, $array2, $tpl);
 }
 
-public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_values, $filters, $config = '') {
+public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_values, $filters, $config = '')
+{
 
     //подключаем файл конфигурации с шаблонами вывода формы
     if (is_file(dirname(__FILE__).'/config/config.'.$this->cfg.'.php')) {
@@ -159,7 +208,18 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
         $tv_elements = $this->getDefaultTVValues($tmp);
         foreach ($tmp as $tv_id => $tmp2) {
             if (isset($filter_values_full[$tv_id])) {
-                uksort($filter_values_full[$tv_id], create_function('$a,$b', 'return is_numeric($a) && is_numeric($b) ? ($a-$b) : strcasecmp(strtolower($a), strtolower($b));'));
+                if (in_array($tv_id, $this->nosort_tv_id)) {
+                    $sort_tmp = array();
+                    foreach($tv_elements[$tv_id] as $k => $v) {
+                      if ( $filter_values_full[$tv_id][$k] ) {
+                          $sort_tmp[$k] = $filter_values_full[$tv_id][$k];
+                      }
+                    }
+                    $filter_values_full[$tv_id] = $sort_tmp;
+                    unset($sort_tmp);
+                } else {
+                    uksort($filter_values_full[$tv_id], create_function('$a,$b', 'return is_numeric($a) && is_numeric($b) ? ($a-$b) : strcasecmp(strtolower($a), strtolower($b));'));
+                }
                 $wrapper = '';
                 $count = '';
                 //||Чекбокс==1||Список==2||Диапазон==3||Флажок==4||Мультиселект==5
@@ -168,7 +228,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $tplRow = $tplRowCheckbox;
                         $tplOuter = $tplOuterCheckbox;
                         foreach ($filter_values_full[$tv_id] as $k => $v) {
-                            $tv_val_name = isset($tv_elements[$k]) ? $tv_elements[$k] : $k;
+                            $tv_val_name = isset($tv_elements[$tv_id][$k]) ? $tv_elements[$tv_id][$k] : $k;
                             $selected = '  ';
                             if (isset ($this->fp[$tv_id])) {
                                 $flag = false;
@@ -207,7 +267,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $tplRow = $tplRowSelect;
                         $tplOuter = $tplOuterSelect;
                         foreach ($filter_values_full[$tv_id] as $k => $v) {
-                            $tv_val_name = isset($tv_elements[$k]) ? $tv_elements[$k] : $k;
+                            $tv_val_name = isset($tv_elements[$tv_id][$k]) ? $tv_elements[$tv_id][$k] : $k;
                             $selected = '  ';
                             if (isset ($this->fp[$tv_id])) {
                                 $flag = false;
@@ -251,7 +311,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $maxvalcurr = '';
                         
                         if (isset($this->curr_filter_values[$tv_id]['content_ids']) && $this->curr_filter_values[$tv_id]['content_ids'] != '') {
-                            $q = $this->modx->db->query("SELECT MIN( CAST( `value` AS UNSIGNED) ) as min, MAX( CAST( `value` AS UNSIGNED) ) as max FROM " . $this->modx->getFullTableName('site_tmplvar_contentvalues') . " WHERE contentid IN(".$this->curr_filter_values[$tv_id]['content_ids'].") AND tmplvarid = {$tv_id}");
+                            $q = $this->modx->db->query("SELECT MIN( CAST( `value` AS UNSIGNED) ) as min, MAX( CAST( `value` AS UNSIGNED) ) as max FROM " . $this->modx->getFullTableName('site_tmplvar_contentvalues') . " WHERE contentid IN(" . $this->curr_filter_values[$tv_id]['content_ids'] . ") AND tmplvarid = {$tv_id}");
                             $minmax = $this->modx->db->getRow($q);
                             $minvalcurr = $minmax['min'];
                             $maxvalcurr = $minmax['max'];
@@ -279,7 +339,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $tplRow = $tplRowRadio;
                         $tplOuter = $tplOuterRadio;
                         foreach ($filter_values_full[$tv_id] as $k => $v) {
-                            $tv_val_name = isset($tv_elements[$k]) ? $tv_elements[$k] : $k;
+                            $tv_val_name = isset($tv_elements[$tv_id][$k]) ? $tv_elements[$tv_id][$k] : $k;
                             $selected = '  ';
                             if (isset ($this->fp[$tv_id])) {
                                 $flag = false;
@@ -317,7 +377,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $tplRow = $tplRowMultySelect;
                         $tplOuter = $tplOuterMultySelect;
                         foreach ($filter_values_full[$tv_id] as $k => $v) {
-                            $tv_val_name = isset($tv_elements[$k]) ? $tv_elements[$k] : $k;
+                            $tv_val_name = isset($tv_elements[$tv_id][$k]) ? $tv_elements[$tv_id][$k] : $k;
                             $selected = '  ';
                             if (isset ($this->fp[$tv_id])) {
                                 $flag = false;
@@ -403,7 +463,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $tplRow = $tplRowColors;
                         $tplOuter = $tplOuterColors;
                         foreach ($filter_values_full[$tv_id] as $k => $v) {
-                            $tv_val_name = isset($tv_elements[$k]) ? $tv_elements[$k] : $k;
+                            $tv_val_name = isset($tv_elements[$tv_id][$k]) ? $tv_elements[$tv_id][$k] : $k;
                             $selected = '  ';
                             $label_selected = '';
                             if (isset ($this->fp[$tv_id])) {
@@ -444,7 +504,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $tplRow = $tplRowPattern;
                         $tplOuter = $tplOuterPattern;
                         foreach ($filter_values_full[$tv_id] as $k => $v) {
-                            $tv_val_name = isset($tv_elements[$k]) ? $tv_elements[$k] : $k;
+                            $tv_val_name = isset($tv_elements[$tv_id][$k]) ? $tv_elements[$tv_id][$k] : $k;
                             $selected = '  ';
                             $label_selected = '';
                             if (isset ($this->fp[$tv_id])) {
@@ -485,7 +545,7 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
                         $tplRow = $tplRowCheckbox;
                         $tplOuter = $tplOuterCheckbox;
                         foreach ($filter_values_full[$tv_id] as $k => $v) {
-                            $tv_val_name = isset($tv_elements[$k]) ? $tv_elements[$k] : $k;
+                            $tv_val_name = isset($tv_elements[$tv_id][$k]) ? $tv_elements[$tv_id][$k] : $k;
                             $selected = '  ';
                             if (isset ($this->fp[$tv_id])) {
                                 $flag = false;
@@ -527,15 +587,16 @@ public function renderFilterBlock ($filter_cats, $filter_values_full, $filter_va
     }
     $tpl = $tplFilterForm;
     $resetTpl = $tplFilterReset;
-    $output = $output != '' ? $this->parseTpl(array('[+url+]', '[+wrapper+]'), array($this->modx->makeUrl($this->modx->documentIdentifier), $output), $tpl) : '';
+    $output = $output != '' ? $this->parseTpl(array('[+url+]', '[+wrapper+]'), array($this->modx->makeUrl($this->docid), $output), $tpl) : '';
     $output .= $output != '' ? $this->parseTpl(array('[+reset_url+]'), array($this->modx->makeUrl($this->modx->documentIdentifier)), $resetTpl) : '';
     return $output;
 }
 
-public function getFilterValues ($content_ids, $filter_tv_ids = '') {
+public function getFilterValues ($content_ids, $filter_tv_ids = '')
+{
     $filter_values = array();
     if ($content_ids != '') {//берем только если есть какие-то документы
-        $sql = "SELECT * FROM " . $this->modx->getFullTableName('site_tmplvar_contentvalues') . " WHERE contentid IN (".$content_ids.") " . ($filter_tv_ids != '' ? " AND tmplvarid IN (".$filter_tv_ids.")" : "");
+        $sql = "SELECT * FROM " . $this->modx->getFullTableName('site_tmplvar_contentvalues') . " WHERE contentid IN (" . $content_ids . ") " . ($filter_tv_ids != '' ? " AND tmplvarid IN (" . $filter_tv_ids . ")" : "");
         $q = $this->modx->db->query($sql);
         while ($row = $this->modx->db->getRow($q)) {
             if (strpos($row['value'], '||') === false) {
@@ -560,12 +621,13 @@ public function getFilterValues ($content_ids, $filter_tv_ids = '') {
     return $filter_values;
 }
 
-public function getFilterFutureValues ($curr_filter_values, $filter_tv_ids = '') {
+public function getFilterFutureValues ($curr_filter_values, $filter_tv_ids = '')
+{
     $filter_values = array();
     if (!empty($curr_filter_values)) {//берем только если есть какие-то документы
         foreach ($curr_filter_values as $tv_id => $v) {
             if (isset($v['content_ids']) && $v['content_ids'] != '') {
-                $sql = "SELECT * FROM " . $this->modx->getFullTableName('site_tmplvar_contentvalues') . " WHERE contentid IN (".$v['content_ids'].") " . ($filter_tv_ids != '' ? " AND tmplvarid ={$tv_id}" : "");
+                $sql = "SELECT * FROM " . $this->modx->getFullTableName('site_tmplvar_contentvalues') . " WHERE contentid IN (" . $v['content_ids'] . ") " . ($filter_tv_ids != '' ? " AND tmplvarid ={$tv_id}" : "");
                 $q = $this->modx->db->query($sql);
                 while ($row = $this->modx->db->getRow($q)) {
                     if (strpos($row['value'], '||') === false) {
@@ -593,7 +655,8 @@ public function getFilterFutureValues ($curr_filter_values, $filter_tv_ids = '')
 }
 
 
-public function makeAllContentIDs ($DLparams){
+public function makeAllContentIDs ($DLparams)
+{
     $this->content_ids = '';
     /*if (isset($input) && !empty($input) && isset($input['f'])) {//разбираем фильтры из строки GET и добавляем их в фильтр DocLister*/
     if (!empty($this->fp)) {//разбираем фильтры из строки GET и добавляем их в фильтр DocLister
@@ -607,10 +670,10 @@ public function makeAllContentIDs ($DLparams){
                 
                 if (isset($v['min']) || isset($v['max'])) {//если параметр - диапазон
                     if (isset($v['min']) && (int)$v['min'] != 0 ) {
-                        $fltr .= 'tvd:' . $this->filter_tv_names[$tvid] . ':egt:' . (int)$v['min'].';';
+                        $fltr .= $this->dl_filter_type . ':' . $this->filter_tv_names[$tvid] . ':egt:' . (int)$v['min'] . ';';
                     }
                     if (isset($v['max']) && (int)$v['max'] != 0 ) {
-                        $fltr .= 'tvd:' . $this->filter_tv_names[$tvid] . ':elt:' . (int)$v['max'].';';
+                        $fltr .= $this->dl_filter_type . ':' . $this->filter_tv_names[$tvid] . ':elt:' . (int)$v['max'] . ';';
                     }
                 } else {//если значение/значения, но не диапазон
                     if (is_array($v)) {
@@ -630,7 +693,7 @@ public function makeAllContentIDs ($DLparams){
                         if ($this->filters[$tvid]['many'] == '1') {
                             $oper = 'containsOne';
                         }
-                        $fltr .= 'tvd:' . $this->filter_tv_names[$tvid] . ':' . $oper . ':' . $val.';';
+                        $fltr .= $this->dl_filter_type . ':' . $this->filter_tv_names[$tvid] . ':' . $oper . ':' . $val . ';';
                     }
                 }
             }
@@ -647,7 +710,8 @@ public function makeAllContentIDs ($DLparams){
     return $this->content_ids;
 }
 
-public function makeCurrFilterValuesContentIDs ($DLparams){
+public function makeCurrFilterValuesContentIDs ($DLparams)
+{
     /*if (isset($input) && !empty($input) && isset($input['f'])) {//разбираем фильтры из строки GET и считаем возможные значения и количество для этих фильтров без учета одного из них (выбранного)*/
     if (!empty($this->fp)) {//разбираем фильтры из строки GET и считаем возможные значения и количество для этих фильтров без учета одного из них (выбранного)
         $f = $this->fp;
@@ -661,10 +725,10 @@ public function makeCurrFilterValuesContentIDs ($DLparams){
                         
                         if (isset($v['min']) || isset($v['max'])) { //если параметр - диапазон
                             if (isset($v['min']) && (int)$v['min'] != 0 ) {
-                                $fltr .= 'tvd:' . $this->filter_tv_names[$tvid] . ':egt:' . (int)$v['min'].';';
+                                $fltr .= $this->dl_filter_type . ':' . $this->filter_tv_names[$tvid] . ':egt:' . (int)$v['min'].';';
                             }
                             if (isset($v['max']) && (int)$v['max'] != 0 ) {
-                                $fltr .= 'tvd:' . $this->filter_tv_names[$tvid] . ':elt:' . (int)$v['max'].';';
+                                $fltr .= $this->dl_filter_type . ':' . $this->filter_tv_names[$tvid] . ':elt:' . (int)$v['max'].';';
                             }
                         } else {//если значение/значения, но не диапазон
                             if (is_array($v)) {
@@ -682,7 +746,7 @@ public function makeCurrFilterValuesContentIDs ($DLparams){
                             }
                             if ($tvid != 0 && isset($this->filter_tv_names[$tvid]) && $val != '') {
                                 if ($this->filters[$tvid]['many'] == '1') {$oper = 'containsOne';}
-                                $fltr .= 'tvd:' . $this->filter_tv_names[$tvid] . ':' . $oper . ':' . $val.';';
+                                $fltr .= $this->dl_filter_type . ':' . $this->filter_tv_names[$tvid] . ':' . $oper . ':' . $val.';';
                             }
                         }
                     }
@@ -708,7 +772,8 @@ public function makeCurrFilterValuesContentIDs ($DLparams){
     //return $this->curr_filter_values;
 }
 
-public function setPlaceholders ($array = array()) {
+public function setPlaceholders ($array = array())
+{
     if (!empty($array)) {
         foreach ($array as $k => $v) {
             $this->modx->setPlaceholder($k, $v);
@@ -716,7 +781,8 @@ public function setPlaceholders ($array = array()) {
     }
 }
 
-public function prepareGetParams ($fp) {
+public function prepareGetParams ($fp)
+{
     $tmp = array();
     if (isset($fp['f']) && is_array($fp['f'])) {
         $tmp = $fp['f'];
@@ -753,7 +819,8 @@ public function prepareGetParams ($fp) {
     $this->fp = $tmp;
 }
 
-public function prepareGetParamsOld ($fp) {
+public function prepareGetParamsOld ($fp)
+{
     $out = array();
     if (is_scalar($fp) && $fp != '') {
         //расшифровываем GET-строку формата f=1~значение1,значение2||2~значение3,значение4||3~100,300~minmax и преобразуем ее в обычный массив $f, 
@@ -788,25 +855,26 @@ public function prepareGetParamsOld ($fp) {
     }
 }
 
-public function getDefaultTVValues($array = array()) {
+public function getDefaultTVValues($array = array())
+{
     $out = array();
     $tvs = implode(",", array_keys($array));
     if ($tvs != '') {
         $elements = $this->getTVNames($tv_ids = $tvs, $field = 'elements');
-        foreach ($elements as $element) {
+        foreach ($elements as $tv_id => $element) {
             if (stristr($element, "@EVAL")) {
                 $element = trim(substr($element, 6));
                 $element = str_replace("\$modx->", "\$this->modx->", $element);
                 $element = eval($element);
-                if ($element != '') {
-                    $tmp = explode("||", $element);
-                    foreach ($tmp as $v) {
-                        $tmp2 = explode("==", $v);
-                        $key = isset($tmp2[1]) && $tmp2[1] != '' ? $tmp2[1] : $tmp2[0];
-                        $value = $tmp2[0];
-                        if ($key != '') {
-                            $out[$key] = $value;
-                        }
+            }
+            if ($element != '') {
+                $tmp = explode("||", $element);
+                foreach ($tmp as $v) {
+                    $tmp2 = explode("==", $v);
+                    $key = isset($tmp2[1]) && $tmp2[1] != '' ? $tmp2[1] : $tmp2[0];
+                    $value = $tmp2[0];
+                    if ($key != '') {
+                        $out[$tv_id][$key] = $value;
                     }
                 }
             }
@@ -816,7 +884,8 @@ public function getDefaultTVValues($array = array()) {
     return $out;
 }
 
-public function getListFromJson($json = '', $field = 'id', $separator = ',') {
+public function getListFromJson($json = '', $field = 'id', $separator = ',')
+{
     $out = '';
     $_ = array();
     if (!empty($json)) {
